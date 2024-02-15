@@ -7,7 +7,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score, KFold
 
 # Load data and covariates
-covars = pd.read_csv(r'D:\repositories\neurocombat_sklearn\examples\data\bladder-pheno.txt', delimiter='\t', index_col='cel')
+covars = pd.read_csv(r'D:\repositories\neurocombat_sklearn\examples\data\bladder-pheno.txt', delimiter='\t',
+                     index_col='cel')
 data = pd.DataFrame(np.load(r'D:\repositories\neurocombat_sklearn\examples\data\bladder-expr.npy'), index=covars.index)
 
 # Set a random binary label
@@ -17,11 +18,17 @@ y = covars.pop('outcome') == 'sTCC-CIS'
 X = pd.concat([covars[['batch', 'cancer', 'age']], data], axis=1)
 
 # Define our harmonizer
-harmonizer = CombatHarmonizer(sites='batch', discrete_covariates=['cancer'], continuous_covariates=['age'], retain=True)
+harmonizer = CombatHarmonizer(
+    sites='batch',
+    discrete_covariates=['cancer'],
+    continuous_covariates=['age'],
+    retain=True
+)
 
 # The Combat harmonizer still works as stand alone
 X_hat = harmonizer.fit_transform(X)
 
+# Weather to retain or discard columns specified used by the harmonizer.
 harmonizer.retain = False
 
 # Create the machine learning pipeline
