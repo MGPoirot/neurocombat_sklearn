@@ -1,18 +1,24 @@
 # Authors: Walter Hugo Lopez Pinaya
 # License: MIT
 import numpy as np
+import pandas as pd
 import numpy.linalg as la
-from sklearn.base import BaseEstimator, TransformerMixin
+from typing import Callable
+from sklearn.base import BaseEstimator
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.utils import check_array
 from sklearn.utils.validation import (check_is_fitted, check_consistent_length, FLOAT_DTYPES)
+from sklearn.preprocessing import StandardScaler
+from copy import deepcopy
+
 
 __all__ = [
-    'CombatModel',
+    'CombatTransformer',
+    'CombatHarmonizer',
 ]
 
 
-class CombatModel(BaseEstimator):
+class CombatTransformer(BaseEstimator):
     """Harmonize/normalize features using Combat's [1] parametric empirical Bayes framework
 
     [1] Fortin, Jean-Philippe, et al. "Harmonization of cortical thickness
@@ -378,3 +384,131 @@ class CombatModel(BaseEstimator):
         bayes_data = bayes_data * np.dot(np.sqrt(var_pooled), np.ones((1, n_samples))) + standardized_mean
 
         return bayes_data
+
+class CombatHarmonizer:
+    """
+    This Wrapper makes the NeuroCombat work with SKLearn pipelines.
+    """
+    def __init__(self,
+                 sites: str,
+                 discrete_covariates=None,
+                 continuous_covariates=None,
+                 data: pd.DataFrame = None,
+                 excluded_covariates=None,
+                 retain=False,
+                 warn=False,
+                 ):
+        """
+        Initiates a class object that can store the properties to late be used upon calling the object:
+        - sites                 (as string, pandas DataFrame column name)
+        - discrete_covariates   (as list of strings, pandas DataFrame column names)
+        - continuous_covariates (as list of strings, pandas DataFrame column names)
+        Additionally:
+        - data                  (as pandas DataFrame) can be provided for cases where the test set includes
+                                sites that the train set does not contain.
+        - leave                 (as list of strings, pandas DataFrame column names) can be provided to exclude
+                                columns from Combat harmonization.
+        """
+        # Set mutable inputs
+        if excluded_covariates is None:
+            excluded_covariates = []
+        if continuous_covariates is None:
+            continuous_covariates = []
+        if discrete_covariates is None:
+            discrete_covariates = []
+        if isinstance(discrete_covariates, str):
+            discrete_covariates = [discrete_covariates]
+        if isinstance(continuous_covariates, str):
+            continuous_covariates = [continuous_covariates]
+
+        # Set columns to leave out of Combat Harmonizatoin
+        self.ex = [sites] + discrete_covariates + continuous_covariates + excluded_covariates
+
+        # Map sites to an index
+        self.site2idx_map = None
+        if data is not None:
+            self._set_set2idx_map(data[sites])
+
+        # Get new estimator
+        self.transformer = CombatTransformer()
+
+        # Set attributes to be used in CombatTransformer
+        self.sites = sites
+        self.dc = discrete_covariates
+        self.cc = continuous_covariates
+
+        # If true, no warnings are raised when columns are missing
+        self.warn = warn
+
+        # Weather to retain the excluded columns
+        self.retain = retain
+
+    def _set_set2idx_map(self, site_series: pd.Series):
+        """
+        Maps each unique value in the site column to a unique integer.
+        """
+        self.site2idx_map = {site: idx for idx, site in enumerate(set(site_series))}
+
+    def _get_args(self, X: pd.DataFrame):
+        """
+        Retrieves the arguments required to run the CombatEstimator.
+        It reads the arguments provided upon initialization from the data provided.
+        """
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError('CombatTransformer expects to transform a Pandas DataFrame data object\n'
+                            f'Provided data object is of type {type(X)}')
+        if self.site2idx_map is None:
+            self._set_set2idx_map(X[self.sites])
+        try:
+            site_idx = np.array([[self.site2idx_map[i]] for i in X[self.sites]])
+        except KeyError:
+            unknown_sites = [i for i in X[self.sites] if i not in self.site2idx_map]
+            raise KeyError('Encountered new site after sites indices were already set.\n'
+                           f'Unknown sites: {unknown_sites}')
+
+        # Return the appropriate discrete and continuous covariates
+        disc_cov = np.array([X.loc[X.index][dc].values.tolist() for dc in self.dc]).T if any(self.dc) else None
+        cont_cov = np.array([X.loc[X.index][cc].values.tolist() for cc in self.cc]).T if any(self.cc) else None
+        return site_idx, disc_cov, cont_cov
+
+    def _recombine(self, method: Callable, X: pd.DataFrame, *args, **kwargs):
+        """
+        Leaves self.leave columns out of the method calls and recombines X inplace afterwards
+        """
+
+        # Check if the variables we will be requesting are present in the data
+        msg_template = 'A {}_covariate was not found in X: {}'
+        for name, check in (('discrete', self.dc), ('continuous', self.dc), ('excluded', self.ex)):
+            if not set(check).issubset(X.columns):
+                msg = msg_template.format(name, *set(check).difference(X.columns))
+                raise KeyError(msg) if not self.warn else print(msg)
+
+        # Set the excluded covariates aside
+        excluded_covariates = [(X.columns.get_loc(c), c, X.pop(c)) for c in self.ex]
+        output = method(X, *args, **kwargs)
+
+        # The output of the transform method is an array
+        if isinstance(output, np.ndarray):
+            X[:] = output
+
+        # Return the appropriate method output
+        if isinstance(output, BaseEstimator):
+            [X.insert(*column) for column in excluded_covariates]
+            return self
+        else:
+            if self.retain is True:
+                [X.insert(*column) for column in excluded_covariates]
+            elif isinstance(self.retain, list):
+                retained_covariates = [c for c in excluded_covariates if c[1] in self.retain]
+                [X.insert(*column) for column in retained_covariates]
+            return X
+
+    def transform(self, X: pd.DataFrame):
+        return self._recombine(self.transformer.transform, X, *self._get_args(X))
+
+    def fit(self, X: pd.DataFrame, y=None):
+        return self._recombine(self.transformer.fit, X, *self._get_args(X))
+
+    def fit_transform(self, X: pd.DataFrame, y=None):
+        """Fit to data, then transform it"""
+        return self.fit(X).transform(X)

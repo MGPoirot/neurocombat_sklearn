@@ -5,14 +5,14 @@ Test1
 """
 print(__doc__)
 
-from neurocombat_sklearn import CombatModel
+from neurocombat_sklearn import CombatTransformer
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 
 # Loading data
-data = np.load('data/bladder-expr.npy')
-covars = pd.read_csv('data/bladder-pheno.txt', delimiter='\t')
+data = np.load('examples/data/bladder-expr.npy')
+covars = pd.read_csv('examples/data/bladder-pheno.txt', delimiter='\t')
 
 # Split data between training and test set
 X_train, X_test, batch_train, batch_test, age_train, \
@@ -24,7 +24,7 @@ age_test, cancer_train, cancer_test = train_test_split(data,
                                                        random_state=32)
 
 # Creating model
-model = CombatModel()
+model = CombatTransformer()
 
 # Fitting the model and transforming the training set
 X_train_harmonized = model.fit_transform(X_train,

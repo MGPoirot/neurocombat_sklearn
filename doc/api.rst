@@ -6,11 +6,20 @@ This is an example on how to document the API of your own project.
 
 .. currentmodule:: neurocombat_sklearn
 
-CombatModel
+CombatEstimator
 ===========
 
 .. autosummary::
    :toctree: generated/
    :template: class.rst
 
-   CombatModel
+   CombatEstimator
+
+CombatTransformer
+===========
+
+.. autosummary::
+   :toctree: generated/
+   :template: class.rst
+
+   CombatTransformer

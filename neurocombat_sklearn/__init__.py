@@ -1,5 +1,4 @@
-from .neurocombat_sklearn import CombatModel
-
+from .neurocombat_sklearn import CombatTransformer, CombatHarmonizer
 from ._version import __version__
 
-__all__ = ['CombatModel', '__version__']
+__all__ = ['CombatTransformer', 'CombatHarmonizer', '__version__']
